@@ -49,8 +49,8 @@ def get_instance_types(api_key):
     return data.get("data", {})
 
 
-def send_slack_notification(webhook_url, message):
-    payload = json.dumps({"text": message}).encode("utf-8")
+def send_slack_notification(webhook_url, blocks):
+    payload = json.dumps({"blocks": blocks}).encode("utf-8")
     req = urllib.request.Request(
         webhook_url,
         data=payload,
@@ -165,6 +165,7 @@ def main():
     notify_slack = not args.no_slack
     try:
         available_set = set()  # (name, region) tuples currently available and notified
+        available_since = {}   # (name, region) -> timestamp when first discovered
         while True:
             items = get_instance_types(api_key)
             available = {}
@@ -228,22 +229,32 @@ def main():
                             storage = info.get("storage", "?")
                             desc = info.get("desc", "")
                             logger.info(f"FOUND: {gpus}×{name} ({gpu_desc}) | {memory} GiB RAM | {vcpus} vCPUs | {storage} GiB storage | {desc} | Region: {region}")
+                            available_since[(name, region)] = time.time()
                 if notify_slack:
-                    alerts = []
                     for name, info in available.items():
                         for region in info["regions"]:
                             if (name, region) in new_avail:
                                 gpus = info.get("gpus", 0)
-                                header = f"🚨🚨🚨 MAJOR BAG ALERT: {gpus}×{name.upper()} 🚨🚨🚨"
-                                body = (
-                                    f"BRUH MOMENT! {gpus}×{name} is AVAILABLE in {region}! "
-                                    "Time to hop on the grind and secure that GPU!"
-                                )
-                                alerts.append(header)
-                                alerts.append(body)
-                    if alerts:
-                        message = "\n\n".join(alerts)
-                        send_slack_notification(slack_webhook, message)
+                                gpu_desc = info.get("gpu_desc", "")
+                                memory = info.get("memory", "?")
+                                vcpus = info.get("vcpus", "?")
+                                storage = info.get("storage", "?")
+                                desc = info.get("desc", "")
+                                blocks = [
+                                    {"type": "header", "text": {"type": "plain_text", "text": f"🚨 GPU AVAILABLE: {gpus}×{name.upper()} in {region} 🚨"}},
+                                    {"type": "section", "fields": [
+                                        {"type": "mrkdwn", "text": f"*GPU:* {gpu_desc}"},
+                                        {"type": "mrkdwn", "text": f"*RAM:* {memory} GiB"},
+                                        {"type": "mrkdwn", "text": f"*vCPUs:* {vcpus}"},
+                                        {"type": "mrkdwn", "text": f"*Storage:* {storage} GiB"},
+                                        {"type": "mrkdwn", "text": f"*Region:* {region}"},
+                                        {"type": "mrkdwn", "text": f"*Description:* {desc}"},
+                                    ]},
+                                    {"type": "context", "elements": [
+                                        {"type": "mrkdwn", "text": "*Time to hop on the grind and secure that GPU!*"}
+                                    ]}
+                                ]
+                                send_slack_notification(slack_webhook, blocks)
                 else:
                     logger.info("Slack notifications are disabled; skipping Slack alert.")
                 # Mark these as available
@@ -251,20 +262,34 @@ def main():
 
             if disappeared:
                 for name, region in disappeared:
-                    logger.info(f"GONE: {name} in {region} is NO LONGER AVAILABLE!")
+                    up_since = available_since.get((name, region), None)
+                    if up_since:
+                        up_time = time.time() - up_since
+                        up_str = format_duration(up_time)
+                        logger.info(f"GONE: {name} in {region} is NO LONGER AVAILABLE! (was up for {up_str})")
+                    else:
+                        logger.info(f"GONE: {name} in {region} is NO LONGER AVAILABLE!")
                 if notify_slack:
-                    gone_alerts = []
                     for name, region in disappeared:
-                        header = f"❌❌❌ GPU GONE: {name.upper()} ❌❌❌"
-                        body = f"{name} in {region} is NO LONGER AVAILABLE!"
-                        gone_alerts.append(header)
-                        gone_alerts.append(body)
-                    if gone_alerts:
-                        message = "\n\n".join(gone_alerts)
-                        send_slack_notification(slack_webhook, message)
-                # Remove from available_set
-                for pair in disappeared:
-                    available_set.discard(pair)
+                        up_since = available_since.get((name, region), None)
+                        if up_since:
+                            up_time = time.time() - up_since
+                            up_str = format_duration(up_time)
+                            gone_text = f"*{name}* in *{region}* is *NO LONGER AVAILABLE!* (was up for {up_str})"
+                        else:
+                            gone_text = f"*{name}* in *{region}* is *NO LONGER AVAILABLE!*"
+                        blocks = [
+                            {"type": "header", "text": {"type": "plain_text", "text": f"❌ GPU GONE: {name.upper()} in {region} ❌"}},
+                            {"type": "section", "text": {"type": "mrkdwn", "text": gone_text}},
+                            {"type": "context", "elements": [
+                                {"type": "mrkdwn", "text": ":warning: This instance type/region is now gone."}
+                            ]}
+                        ]
+                        send_slack_notification(slack_webhook, blocks)
+                    # Remove from available_set
+                    for pair in disappeared:
+                        available_set.discard(pair)
+                        available_since.pop(pair, None)
 
             if not new_avail and not disappeared:
                 logger.info(
@@ -276,6 +301,20 @@ def main():
     except KeyboardInterrupt:
         logger.info("Interrupted by user, exiting.")
         sys.exit(0)
+
+
+def format_duration(seconds):
+    seconds = int(seconds)
+    if seconds < 60:
+        return f"{seconds}s"
+    minutes, seconds = divmod(seconds, 60)
+    if minutes < 60:
+        return f"{minutes}m {seconds}s"
+    hours, minutes = divmod(minutes, 60)
+    if hours < 24:
+        return f"{hours}h {minutes}m"
+    days, hours = divmod(hours, 24)
+    return f"{days}d {hours}h"
 
 
 if __name__ == "__main__":
