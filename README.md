@@ -24,18 +24,6 @@ LAMBDA_API_KEY=your_key
 SLACK_WEBHOOK_URL=https://hooks.slack.com/services/XXX/YYY/ZZZ
 ```
 
-### 2. YAML (`configs/default.yaml`)
-```yaml
-api_key: ""
-slack_webhook: ""
-types: ["h100", "gh200"]
-region: "us"
-min_gpus: 1
-max_gpus: 4
-interval: 60
-once: false
-```
-
 ## Usage
 Run directly:
 ```bash
