@@ -60,9 +60,7 @@ def send_slack_notification(webhook_url, blocks):
     try:
         with urllib.request.urlopen(req) as resp:
             if resp.getcode() < 200 or resp.getcode() >= 300:
-                logger.error(
-                    f"Slack notification failed with status {resp.getcode()}"
-                )
+                logger.error(f"Slack notification failed with status {resp.getcode()}")
     except urllib.error.HTTPError as e:
         logger.error(f"Error sending Slack notification: {e.code} {e.reason}")
 
@@ -133,9 +131,7 @@ def main():
 
     api_key = args.api_key
     if not api_key:
-        logger.error(
-            "Missing API key. Provide via --api-key or LAMBDA_API_KEY env"
-        )
+        logger.error("Missing API key. Provide via --api-key or LAMBDA_API_KEY env")
         sys.exit(1)
 
     slack_webhook = args.slack_webhook
@@ -147,9 +143,7 @@ def main():
 
     patterns = args.type
     if not patterns:
-        logger.error(
-            "Missing instance type patterns. Provide via --type"
-        )
+        logger.error("Missing instance type patterns. Provide via --type")
         sys.exit(1)
     patterns = [p.lower() for p in patterns]
     logger.info(f"Watching for patterns: {patterns}")
@@ -165,7 +159,7 @@ def main():
     notify_slack = not args.no_slack
     try:
         available_set = set()  # (name, region) tuples currently available and notified
-        available_since = {}   # (name, region) -> timestamp when first discovered
+        available_since = {}  # (name, region) -> timestamp when first discovered
         while True:
             items = get_instance_types(api_key)
             available = {}
@@ -208,15 +202,19 @@ def main():
                             current_found.add((name, region))
 
             # Find new availabilities (newly available)
-            new_avail = [ (name, region)
-                          for name, info in available.items()
-                          for region in info["regions"]
-                          if (name, region) not in available_set ]
+            new_avail = [
+                (name, region)
+                for name, info in available.items()
+                for region in info["regions"]
+                if (name, region) not in available_set
+            ]
 
             # Find disappearances (were available, now gone)
-            disappeared = [ (name, region)
-                            for (name, region) in available_set
-                            if (name, region) not in current_found ]
+            disappeared = [
+                (name, region)
+                for (name, region) in available_set
+                if (name, region) not in current_found
+            ]
 
             if new_avail:
                 for name, info in available.items():
@@ -228,7 +226,9 @@ def main():
                             vcpus = info.get("vcpus", "?")
                             storage = info.get("storage", "?")
                             desc = info.get("desc", "")
-                            logger.info(f"FOUND: {gpus}×{name} ({gpu_desc}) | {memory} GiB RAM | {vcpus} vCPUs | {storage} GiB storage | {desc} | Region: {region}")
+                            logger.info(
+                                f"FOUND: {gpus}×{name} ({gpu_desc}) | {memory} GiB RAM | {vcpus} vCPUs | {storage} GiB storage | {desc} | Region: {region}"
+                            )
                             available_since[(name, region)] = time.time()
                 if notify_slack:
                     for name, info in available.items():
@@ -241,22 +241,57 @@ def main():
                                 storage = info.get("storage", "?")
                                 desc = info.get("desc", "")
                                 blocks = [
-                                    {"type": "header", "text": {"type": "plain_text", "text": f"🚨 GPU AVAILABLE: {gpus}×{name.upper()} in {region} 🚨"}},
-                                    {"type": "section", "fields": [
-                                        {"type": "mrkdwn", "text": f"*GPU:* {gpu_desc}"},
-                                        {"type": "mrkdwn", "text": f"*RAM:* {memory} GiB"},
-                                        {"type": "mrkdwn", "text": f"*vCPUs:* {vcpus}"},
-                                        {"type": "mrkdwn", "text": f"*Storage:* {storage} GiB"},
-                                        {"type": "mrkdwn", "text": f"*Region:* {region}"},
-                                        {"type": "mrkdwn", "text": f"*Description:* {desc}"},
-                                    ]},
-                                    {"type": "context", "elements": [
-                                        {"type": "mrkdwn", "text": "*Time to hop on the grind and secure that GPU!*"}
-                                    ]}
+                                    {
+                                        "type": "header",
+                                        "text": {
+                                            "type": "plain_text",
+                                            "text": f"🚨💰 MAJOR BAG ALERT: {gpus}×{name.upper()} in {region} 💰🚨",
+                                        },
+                                    },
+                                    {
+                                        "type": "section",
+                                        "fields": [
+                                            {
+                                                "type": "mrkdwn",
+                                                "text": f"*GPU:* {gpu_desc}",
+                                            },
+                                            {
+                                                "type": "mrkdwn",
+                                                "text": f"*RAM:* {memory} GiB",
+                                            },
+                                            {
+                                                "type": "mrkdwn",
+                                                "text": f"*vCPUs:* {vcpus}",
+                                            },
+                                            {
+                                                "type": "mrkdwn",
+                                                "text": f"*Storage:* {storage} GiB",
+                                            },
+                                            {
+                                                "type": "mrkdwn",
+                                                "text": f"*Region:* {region}",
+                                            },
+                                            {
+                                                "type": "mrkdwn",
+                                                "text": f"*Description:* {desc}",
+                                            },
+                                        ],
+                                    },
+                                    {
+                                        "type": "context",
+                                        "elements": [
+                                            {
+                                                "type": "mrkdwn",
+                                                "text": "*Time to hop on the grind and secure that GPU!*",
+                                            }
+                                        ],
+                                    },
                                 ]
                                 send_slack_notification(slack_webhook, blocks)
                 else:
-                    logger.info("Slack notifications are disabled; skipping Slack alert.")
+                    logger.info(
+                        "Slack notifications are disabled; skipping Slack alert."
+                    )
                 # Mark these as available
                 available_set.update(new_avail)
 
@@ -266,24 +301,51 @@ def main():
                     if up_since:
                         up_time = time.time() - up_since
                         up_str = format_duration(up_time)
-                        logger.info(f"GONE: {name} in {region} is NO LONGER AVAILABLE! (was up for {up_str})")
+                        logger.info(
+                            f"🚨❌ GONE: {name} in {region} is NO LONGER AVAILABLE! (was up for {up_str}) 🚨❌\nBRO, THE GPU JUST VANISHED 💨💀 SOUND THE ALARMS 🚨🚨"
+                        )
                     else:
-                        logger.info(f"GONE: {name} in {region} is NO LONGER AVAILABLE!")
+                        logger.info(
+                            f"🚨❌ GONE: {name} in {region} is NO LONGER AVAILABLE! 🚨❌\nBRO, THE GPU JUST VANISHED 💨💀 SOUND THE ALARMS 🚨🚨"
+                        )
                 if notify_slack:
                     for name, region in disappeared:
                         up_since = available_since.get((name, region), None)
                         if up_since:
                             up_time = time.time() - up_since
                             up_str = format_duration(up_time)
-                            gone_text = f"*{name}* in *{region}* is *NO LONGER AVAILABLE!* (was up for {up_str})"
+                            gone_text = (
+                                f"*{name}* in *{region}* is *NO LONGER AVAILABLE!* (was up for {up_str})\n\n"
+                                ":rotating_light: BRO, THE GPU JUST VANISHED 💨💀\n"
+                                "*SOUND THE ALARMS* 🚨🚨"
+                            )
                         else:
-                            gone_text = f"*{name}* in *{region}* is *NO LONGER AVAILABLE!*"
+                            gone_text = (
+                                f"*{name}* in *{region}* is *NO LONGER AVAILABLE!*\n\n"
+                                ":rotating_light: BRO, THE GPU JUST VANISHED 💨💀\n"
+                                "*SOUND THE ALARMS* 🚨🚨"
+                            )
                         blocks = [
-                            {"type": "header", "text": {"type": "plain_text", "text": f"❌ GPU GONE: {name.upper()} in {region} ❌"}},
-                            {"type": "section", "text": {"type": "mrkdwn", "text": gone_text}},
-                            {"type": "context", "elements": [
-                                {"type": "mrkdwn", "text": ":warning: This instance type/region is now gone."}
-                            ]}
+                            {
+                                "type": "header",
+                                "text": {
+                                    "type": "plain_text",
+                                    "text": f"❌🚨 GPU GONE: {name.upper()} in {region} 🚨❌",
+                                },
+                            },
+                            {
+                                "type": "section",
+                                "text": {"type": "mrkdwn", "text": gone_text},
+                            },
+                            {
+                                "type": "context",
+                                "elements": [
+                                    {
+                                        "type": "mrkdwn",
+                                        "text": ":warning: This instance type/region is now gone. F in the chat.",
+                                    }
+                                ],
+                            },
                         ]
                         send_slack_notification(slack_webhook, blocks)
                     # Remove from available_set
